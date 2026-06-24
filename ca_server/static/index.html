@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>IM · Certificate Authority</title>
+<style>
+  :root{--bg:#0f172a;--panel:#1e293b;--accent:#38bdf8;--muted:#94a3b8}
+  *{box-sizing:border-box}body{margin:0;font-family:Segoe UI,system-ui,sans-serif;background:var(--bg);color:#e2e8f0}
+  header{background:#082f49;padding:16px 28px;border-bottom:3px solid var(--accent)}
+  header h1{margin:0;font-size:20px}header span{color:var(--muted);font-size:13px}
+  .tabs{display:flex;flex-wrap:wrap;gap:4px;background:#0b1220;padding:8px 28px;border-bottom:1px solid #334155}
+  .tabbtn{background:#1e293b;color:#cbd5e1;border:0;padding:8px 14px;border-radius:8px 8px 0 0;cursor:pointer;font-size:13px}
+  .tabbtn.active{background:var(--accent);color:#082f49;font-weight:700}
+  main{max-width:1100px;margin:0 auto;padding:24px}
+  .panel{display:none}.panel.show{display:block}
+  .card{background:var(--panel);border-radius:10px;padding:18px;margin-bottom:18px;box-shadow:0 1px 3px #0006}
+  h2{font-size:15px;margin:0 0 12px;color:var(--accent)}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{text-align:left;padding:8px 10px;border-bottom:1px solid #334155}th{color:var(--muted)}
+  .tag{padding:2px 8px;border-radius:10px;font-size:11px}.good{background:#14532d;color:#86efac}.revoked{background:#450a0a;color:#fca5a5}
+  label{display:block;font-size:12px;color:var(--muted);margin:8px 0 3px}
+  input,textarea,select{width:100%;background:#0b1220;border:1px solid #334155;color:#e2e8f0;padding:7px 10px;border-radius:6px;font-family:inherit}
+  button{background:var(--accent);color:#082f49;border:0;padding:8px 14px;border-radius:6px;cursor:pointer;font-weight:600;margin-top:10px}
+  button.sm{padding:3px 8px;font-size:11px;margin:1px}button.ghost{background:#334155;color:#e2e8f0}button.red{background:#7f1d1d;color:#fecaca}
+  pre{background:#0b1220;padding:12px;border-radius:8px;overflow:auto;font-size:11px;color:#7dd3fc;max-height:300px}
+</style>
+</head>
+<body>
+<header><h1>🔐 Certificate Authority</h1><span>port 9001 · issues auth / sign / tsa certificates</span></header>
+<div class="tabs" id="tabs"></div>
+<main>
+  <!-- ISSUED CERTS -->
+  <section class="panel show" id="t-certs"><div class="card"><h2>Issued certificates</h2>
+    <table><thead><tr><th>Serial</th><th>Subject CN</th><th>Profile</th><th>Requested by</th><th>Status</th><th>Expires</th><th>Actions</th></tr></thead><tbody id="certRows"></tbody></table>
+  </div></section>
+
+  <!-- SIGN CSR -->
+  <section class="panel" id="t-sign"><div class="card"><h2>Sign a certificate request (CSR)</h2>
+    <div class="row" style="display:flex;gap:10px"><div style="flex:1"><label>profile</label>
+      <select id="profile"><option>auth</option><option>sign</option><option>tsa</option><option>ocsp</option><option>generic</option></select></div>
+      <div style="flex:1"><label>requested by</label><input id="reqby" value="manual"></div></div>
+    <label>CSR (PEM)</label><textarea id="csr" rows="8" placeholder="-----BEGIN CERTIFICATE REQUEST-----"></textarea>
+    <button onclick="sign()">Sign CSR</button>
+    <pre id="signOut" style="margin-top:12px"></pre>
+  </div></section>
+
+  <!-- OCSP -->
+  <section class="panel" id="t-ocsp"><div class="card"><h2>OCSP status check</h2>
+    <label>certificate serial (hex)</label><input id="ocspSerial">
+    <button onclick="checkOcsp()">Check status</button>
+    <pre id="ocspOut" style="margin-top:12px"></pre>
+  </div></section>
+
+  <!-- ROOT CA -->
+  <section class="panel" id="t-root"><div class="card"><h2>Root CA certificate</h2><pre id="caCert">loading…</pre></div></section>
+</main>
+<script>
+const TABS=[['t-certs','Issued certs'],['t-sign','Sign CSR'],['t-ocsp','OCSP'],['t-root','Root CA']];
+document.getElementById('tabs').innerHTML=TABS.map((t,i)=>`<button class="tabbtn${i==0?' active':''}" data-tab="${t[0]}" onclick="tab('${t[0]}')">${t[1]}</button>`).join('');
+function tab(id){document.querySelectorAll('.panel').forEach(p=>p.classList.remove('show'));document.getElementById(id).classList.add('show');
+  document.querySelectorAll('.tabbtn').forEach(b=>b.classList.remove('active'));document.querySelector(`[data-tab="${id}"]`).classList.add('active');}
+async function api(url,method='GET',body){const r=await fetch(url,{method,headers:body?{'Content-Type':'application/json'}:{},body:body?JSON.stringify(body):undefined});try{return await r.json()}catch{return{status:r.status}}}
+async function load(){
+  document.getElementById('caCert').textContent=await (await fetch('/api/ca-cert')).text();
+  const certs=await api('/api/certs');
+  document.getElementById('certRows').innerHTML=certs.map(c=>`<tr><td>${c.serial.slice(0,16)}…</td><td>${c.subject_cn||''}</td><td>${c.profile}</td><td>${c.requested_by||''}</td>
+    <td><span class="tag ${c.status==='good'?'good':'revoked'}">${c.status}</span></td><td>${(c.not_after||'').slice(0,10)}</td>
+    <td>${c.status==='good'?`<button class="sm ghost" onclick="revoke('${c.serial}')">Revoke</button> `:''}<button class="sm red" onclick="del('${c.serial}')">Delete</button></td></tr>`).join('');
+}
+async function revoke(s){await api('/api/revoke','POST',{serial:s});load();}
+async function del(s){if(!confirm('Delete cert record '+s+'?'))return;await api('/api/certs/'+s,'DELETE');load();}
+async function sign(){const out=await api('/api/sign','POST',{csr_pem:document.getElementById('csr').value,profile:document.getElementById('profile').value,requested_by:document.getElementById('reqby').value});
+  document.getElementById('signOut').textContent=JSON.stringify(out,null,2);load();}
+async function checkOcsp(){const s=document.getElementById('ocspSerial').value.trim();document.getElementById('ocspOut').textContent=JSON.stringify(await api('/api/ocsp/'+s),null,2);}
+load(); setInterval(load,5000);
+</script>
+</body>
+</html>
