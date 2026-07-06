@@ -1,0 +1,44 @@
+# CA Server: ConfigMap + Deployment + Service.
+# The CA is the root of trust and calls no other server - it only needs the DB.
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ca-config
+data:
+  IM_DB_HOST: "mysql"
+  IM_DB_PORT: "3306"
+  IM_DB_USER: "root"
+  IM_DB_PASS: "root"          # use a Secret in production
+  CA_DB_NAME: "ca_db"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ca
+  labels: { app: ca }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: ca } }
+  template:
+    metadata: { labels: { app: ca } }
+    spec:
+      containers:
+        - name: ca
+          image: msahique/ca_server_2026:v1
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef: { name: ca-config }
+          ports: [{ containerPort: 9001 }]
+          readinessProbe:
+            httpGet: { path: /openapi.json, port: 9001 }
+            initialDelaySeconds: 5
+            periodSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ca
+spec:
+  selector: { app: ca }
+  ports: [{ port: 9001, targetPort: 9001 }]
