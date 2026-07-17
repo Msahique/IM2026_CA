@@ -1,0 +1,14 @@
+{
+  "_comment": "CA Server config. Precedence at runtime: env var (in [brackets]) > this file > built-in default. The CA is the root of trust and calls no other server, so it only needs its database.",
+
+  "database": {
+    "host": "localhost",
+    "port": 3306,
+    "user": "root",
+    "password": "root"
+  },
+
+  "ca_server": {
+    "db_name": "ca_db"
+  }
+}
