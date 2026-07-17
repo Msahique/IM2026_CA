@@ -25,7 +25,7 @@ spec:
     spec:
       containers:
         - name: ca
-          image: msahique/ca_server_2026:v1
+          image: msahique/ca_server_2026:v2
           imagePullPolicy: IfNotPresent
           envFrom:
             - configMapRef: { name: ca-config }
